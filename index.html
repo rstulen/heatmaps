@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My heat maps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f8fa;
+    --surface: #ffffff;
+    --text: #1d2733;
+    --muted: #5b6876;
+    --line: #dde3ea;
+    --focus: #2f6fd6;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12171d;
+      --surface: #1b222b;
+      --text: #e8edf2;
+      --muted: #9aa7b4;
+      --line: #2c3540;
+      --focus: #7fb0ff;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.5;
+  }
+  main {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+  }
+  .scale {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #2b5fb8, #3fa7c9, #8fd17a, #f2d649, #f08a3c, #d8343b);
+    margin-bottom: 1.5rem;
+  }
+  h1 {
+    font-size: 2rem;
+    line-height: 1.2;
+    margin: 0 0 0.25rem;
+  }
+  .sub { color: var(--muted); margin: 0 0 2rem; }
+  #filter {
+    width: 100%;
+    font: inherit;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    margin-bottom: 1rem;
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li + li { border-top: 1px solid var(--line); }
+  a.map {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.9rem 0.25rem;
+    color: var(--text);
+    text-decoration: none;
+  }
+  a.map:hover .name { text-decoration: underline; }
+  a.map:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+  .swatch {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+  .name { font-weight: 700; }
+  .path { display: block; color: var(--muted); font-size: 0.875rem; font-weight: 400; }
+  .msg { color: var(--muted); padding: 1rem 0; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="scale" aria-hidden="true"></div>
+  <h1>My heat maps</h1>
+  <p class="sub" id="sub">Loading your maps…</p>
+  <input id="filter" class="hidden" type="search" placeholder="Search maps" aria-label="Search maps">
+  <ul id="list"></ul>
+  <p class="msg hidden" id="msg"></p>
+</main>
+
+<script>
+(function () {
+  var colors = ["#2b5fb8", "#3fa7c9", "#8fd17a", "#f2d649", "#f08a3c", "#d8343b"];
+  var list = document.getElementById("list");
+  var sub = document.getElementById("sub");
+  var msg = document.getElementById("msg");
+  var filter = document.getElementById("filter");
+
+  function show(text) {
+    msg.textContent = text;
+    msg.classList.remove("hidden");
+  }
+
+  // Work out the GitHub username and repository from this page's address,
+  // e.g. https://username.github.io/heatmaps/
+  var host = location.hostname;
+  if (!host.endsWith(".github.io")) {
+    sub.textContent = "This page lists your maps once it is on GitHub Pages.";
+    show("Upload this file to your repository as index.html, then open your GitHub Pages address.");
+    return;
+  }
+  var owner = host.replace(".github.io", "");
+  var firstPart = location.pathname.split("/").filter(Boolean)[0];
+  var repo = (firstPart && !firstPart.endsWith(".html")) ? firstPart : host;
+  var base = repo === host ? "/" : "/" + repo + "/";
+
+  function prettyName(path) {
+    var file = path.split("/").pop().replace(/\.html?$/i, "");
+    var words = file.replace(/[_-]+/g, " ").trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
+
+  fetch("https://api.github.com/repos/" + owner + "/" + repo + "/git/trees/HEAD?recursive=1")
+    .then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      var maps = data.tree
+        .filter(function (f) {
+          return f.type === "blob" && /\.html?$/i.test(f.path) && !/(^|\/)index\.html?$/i.test(f.path);
+        })
+        .map(function (f) { return f.path; })
+        .sort(function (a, b) { return prettyName(a).localeCompare(prettyName(b)); });
+
+      if (maps.length === 0) {
+        sub.textContent = "No maps yet.";
+        show("Upload your heat map HTML files to this repository and they will appear here.");
+        return;
+      }
+
+      sub.textContent = maps.length === 1 ? "1 map. Click to open it." : maps.length + " maps. Click one to open it.";
+      if (maps.length > 6) filter.classList.remove("hidden");
+
+      maps.forEach(function (path, i) {
+        var li = document.createElement("li");
+        var a = document.createElement("a");
+        a.className = "map";
+        a.href = base + path.split("/").map(encodeURIComponent).join("/");
+
+        var sw = document.createElement("span");
+        sw.className = "swatch";
+        sw.style.background = colors[i % colors.length];
+
+        var text = document.createElement("span");
+        var name = document.createElement("span");
+        name.className = "name";
+        name.textContent = prettyName(path);
+        var p = document.createElement("span");
+        p.className = "path";
+        p.textContent = path;
+        text.appendChild(name);
+        text.appendChild(p);
+
+        a.appendChild(sw);
+        a.appendChild(text);
+        li.appendChild(a);
+        li.dataset.search = (prettyName(path) + " " + path).toLowerCase();
+        list.appendChild(li);
+      });
+
+      filter.addEventListener("input", function () {
+        var q = filter.value.toLowerCase().trim();
+        Array.prototype.forEach.call(list.children, function (li) {
+          li.classList.toggle("hidden", q && li.dataset.search.indexOf(q) === -1);
+        });
+      });
+    })
+    .catch(function () {
+      sub.textContent = "Couldn’t load the list of maps.";
+      show("Check that the repository is public, then refresh this page in a minute.");
+    });
+})();
+</script>
+</body>
+</html>
